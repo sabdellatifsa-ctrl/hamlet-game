@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hamlet: Elsinore Nights</title>
+<style>
+:root{--bg:#0e0c12;--fg:#f3ead8;--ac:#d4af37;box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:"Segoe UI",Tahoma,Arial,sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+.hud{position:fixed;left:0;right:0;padding:env(safe-area-inset-top,0px) 10px 0;pointer-events:none;top:0;text-shadow:0 1px 3px #000}
+#obj{background:rgba(0,0,0,.55);border-radius:10px;padding:8px 10px;margin-top:8px;font-size:14px;line-height:1.4}
+#obj b{color:var(--ac)}#ar{display:inline-block;font-size:20px;color:var(--ac);transition:transform .1s}
+#st{display:flex;justify-content:space-between;font-size:13px;margin-top:6px}
+#bot{position:fixed;left:0;right:0;bottom:0;padding:0 12px calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;justify-content:space-between;align-items:flex-end;pointer-events:none}
+#bot button{pointer-events:auto;touch-action:none;border:0;border-radius:50%;width:62px;height:62px;font-size:24px;background:rgba(255,255,255,.18);color:#fff;margin:3px;backdrop-filter:blur(4px)}
+#bot button:active{background:var(--ac)}
+#dp{display:grid;grid-template-columns:repeat(3,66px);grid-template-rows:repeat(2,66px)}
+#atk{width:84px!important;height:84px!important;font-size:32px!important;background:rgba(160,30,45,.7)!important}
+#dl{position:fixed;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);background:rgba(10,8,14,.92);border:2px solid var(--ac);border-radius:14px;padding:12px;display:none;z-index:4;font-size:15px;line-height:1.6}
+#dl button{margin-top:8px;border:0;border-radius:10px;padding:8px 16px;background:var(--ac);color:#111;font-weight:700;font-size:14px}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:16px;z-index:9}
+#box{max-width:380px;text-align:center}
+#nm,#rc{width:85%;padding:9px;border-radius:10px;border:2px solid #777;background:#1b1722;color:var(--fg);font-size:16px;text-align:center;margin:10px 0}
+#go{border:0;border-radius:12px;padding:12px 28px;background:var(--ac);color:#111;font-weight:700;font-size:16px}
+</style>
+</head>
+<body>
+<div class="hud"><div id="obj"></div><div id="st"><span id="hp"></span><span id="pl"></span></div></div>
+<div id="bot"><div id="dp"><span></span><button data-k="ArrowUp">▲</button><span></span><button data-k="ArrowLeft">◀</button><button data-k="ArrowDown">▼</button><button data-k="ArrowRight">▶</button></div><button id="atk">⚔️</button></div>
+<div id="dl"></div>
+<div id="ov"><div id="box"><h1 style="margin:0 0 6px">🏰 Hamlet: Elsinore Nights</h1><div style="font-size:14px;opacity:.85;line-height:1.5">You are Hamlet, Prince of Denmark. Arrow keys: ↑ ↓ walk, ← → turn. Space: swing your sword. Follow the golden beams through the story. Other players join you as fellow Hamlets in the same world.</div><input id="nm" maxlength="14" placeholder="Your name"><br><input id="rc" maxlength="20" placeholder="Room code (same for all players)" style="margin-top:0"><br><button id="go">Enter Elsinore</button></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+(function(){
+if(window.claude){var r=document.getElementById("rc");if(r)r.style.display="none";return}
+window.claude={use:function(){return new Promise(function(res){window.__joinRoom=function(c){res(mk(c))}})}};
+function mk(code){
+ var id="hamletelsinore-"+code.toLowerCase().replace(/[^a-z0-9]/g,""),me={},others={},hs=[],on=false,host=false,conns={},hc=null,dirty=false;
+ function list(){return Object.keys(others).map(function(k){return {peer:k,presence:others[k],sameTab:false,isMe:false}})}
+ function fire(){var l=list();hs.forEach(function(h){h({peers:l})})}
+ var room={presence:function(p){me=p;if(host)dirty=true;else if(hc&&hc.open)hc.send({t:"p",p:p})},onPeers:function(h){hs.push(h)},peers:list,connected:function(){return on}};
+ function asHost(){var pr=new Peer(id);
+  pr.on("open",function(){host=true;on=true});
+  pr.on("connection",function(c){conns[c.peer]=c;
+   c.on("data",function(d){if(d&&d.t==="p"){others[c.peer]=d.p;dirty=true}});
+   c.on("close",function(){delete others[c.peer];delete conns[c.peer];dirty=true})});
+  pr.on("error",function(e){if(e.type==="unavailable-id"&&!host){asClient()}});
+  setInterval(function(){if(!dirty)return;dirty=false;fire();
+   Object.keys(conns).forEach(function(k){var m={host:me};Object.keys(others).forEach(function(o){if(o!==k)m[o]=others[o]});if(conns[k].open)conns[k].send({t:"m",m:m})})},100)}
+ function asClient(){var pr=new Peer();pr.on("open",function(){hc=pr.connect(id);
+   hc.on("open",function(){on=true;hc.send({t:"p",p:me})});
+   hc.on("data",function(d){if(d&&d.t==="m"){others=d.m;fire()}});
+   hc.on("close",function(){on=false;others={};fire()})});
+  pr.on("error",function(){on=false})}
+ asHost();return room}
+})();
+</script>
+<script>
+const $=i=>document.getElementById(i),T=window.THREE;
+(function(){let ok=!!T;if(ok){try{const c=document.createElement("canvas");ok=!!(c.getContext("webgl")||c.getContext("experimental-webgl"))}catch(e){ok=false}}if(!ok){$("box").innerHTML="<h2>Can't start the 3D engine</h2><p style='line-height:1.6'>This game needs WebGL and the three.js library (loaded from cdnjs.cloudflare.com). Try: Chrome or Safari, turn on hardware acceleration, disable ad/script blockers for this page, or reload.</p>";throw new Error("3D engine unavailable")}})();
+const M=[
+["The Battlements","Reach the castle wall. The guards have seen a ghost.",0,-52,"go",0],
+["The Ghost Speaks","Follow the ghost into the east courtyard.",42,-34,"go",1],
+["Antic Disposition","Go to Polonius's hall and play the madman.",-44,-13,"go",2],
+["The Nunnery Scene","Find Ophelia in the garden.",44,8,"go",3],
+["The Mousetrap","Stage the play at the theatre.",0,12,"go",4],
+["Claudius at Prayer","Go to the chapel.",-42,22,"go",5],
+["The Queen's Chamber","Strike the figure behind the curtain!",42,38,"kill",6],
+["Ophelia and the River","Go to the river.",-50,-50,"go",7],
+["The Graveyard","Reach the graveyard.",6,58,"go",8],
+["The Final Duel","Defeat Laertes and Claudius!",0,-18,"boss",9]];
+const NPC=[[0x777799,"Horatio"],[0xdfe8ff,"Ghost"],[0x666666,"Polonius"],[0xffffff,"Ophelia"],[0x3a5fbf,"Horatio"],[0xa3202f,"Claudius"],[0x666666,"Polonius"],[0xffffff,"Ophelia"],[0x2a2a33,"Gravedigger"],[0x8d99a6,"Laertes"]];
+const SKY=[0x151c34,0x0b1224,0x2b2040,0x4a6a9a,0x4a2230,0x2b3555,0x3a2340,0x0f2438,0x20242d,0x4a1520,0xd9b45a];
+const DL=[
+["Marcellus|I saw it again! The very shape of the dead king.","Horatio|I can hardly believe it... we must tell Prince Hamlet.","Marcellus|Something is rotten in the state of Denmark."],
+["Ghost|I am thy father's spirit, Hamlet, killed by poison poured in my ear as I slept.","Ghost|My own brother Claudius did it. Avenge me, but leave thy mother to heaven.","Hamlet|I will avenge you, father. Your words will never leave my mind."],
+["Hamlet|I will put on a mask of madness, and no one will guess my purpose.","Polonius|The prince has gone mad for love of my daughter Ophelia, surely.","Claudius|I must find out exactly what he is plotting."],
+["Hamlet|To be, or not to be, that is the question...","Hamlet|Get thee to a nunnery, Ophelia. No one is worth it.","Ophelia|Oh, what a noble mind is here o'erthrown!"],
+["Hamlet|The play's the thing wherein I'll catch the conscience of the king.","Claudius|Enough! Give me some light. Away!","Hamlet|Did you see, Horatio? The Ghost spoke true."],
+["Claudius|My offence is rank, it smells to heaven, yet I cannot give up the crown and the queen.","Hamlet|If I kill him at prayer he goes to heaven... I will wait for a better moment.","Claudius|My words fly up, my thoughts remain below."],
+["Hamlet|Who is behind the curtain? (stabs) Oh no... it is Polonius!","Gertrude|Hamlet, you have much offended your father!","Hamlet|Mother, you have much offended my true father!"],
+["Gertrude|Poor Ophelia has drowned in the river, singing as she went.","Laertes|My father and my sister... I will have vengeance on Hamlet.","Claudius|Calm yourself, Laertes. I have a plan for the duel."],
+["Hamlet|Alas, poor Yorick! He used to make us laugh.","Horatio|Even Alexander the Great turned to dust, my lord.","Hamlet|We all end the same way, kings and beggars alike."],
+["Laertes|The blade is poisoned, and Claudius has arranged everything.","Gertrude|(drinks the cup) The drink... the drink, Hamlet! I am poisoned!"]];
+const qq=(q,a,ar,b,br)=>({q:q,o:[[a,ar],[b,br]]});
+const END="Hamlet|Horatio, tell my story. The rest is silence.";
+const Q={
+0:[qq("Horatio warns the Ghost may lure you to the cliff and drive you mad. Follow it?","Follow it",["Hamlet|My fate cries out! I will follow, though hell itself should gape.","Fate|The Ghost leads you away from the guards."],"Refuse",["Hamlet|Perhaps Horatio is right...","Fate|But the Ghost beckons again, and your curiosity wins."])],
+1:[qq("Do you believe the Ghost?","Believe it",["Hamlet|If it speaks true, the king is a murderer. I will find proof.","Fate|Belief or doubt, you will test the king with a play."],"Doubt it",["Hamlet|The spirit may be a devil, tempting me to ruin.","Fate|Belief or doubt, you will test the king with a play."]),
+qq("The Ghost cries Swear! Do you make Horatio and the guards swear silence?","Make them swear",["Hamlet|Swear by my sword never to speak of what you have seen.","Fate|They swear. The secret is yours alone."],"Trust their silence",["Hamlet|I trust you, my friends.","Fate|They keep their word. The secret is yours alone."])],
+2:[qq("Will you feign madness to hide your plan?","Feign madness",["Hamlet|I shall put an antic disposition on.","Fate|The court will call it madness."],"Stay sane and open",["Hamlet|I will speak plainly.","Fate|Claudius is watching. Soon you will wear the mask anyway."]),
+qq("Your old friends Rosencrantz and Guildenstern arrive. Trust them?","Trust them",["Hamlet|Old friends, welcome to Elsinore.","Fate|They were sent by Claudius to spy on you."],"Test them",["Hamlet|Were you not sent for? Speak honestly.","Fate|Their faces say it all. They were sent by Claudius."]),
+qq("Travelling players arrive. Do you ask them for a play about a murder?","Ask for the murder play",["Hamlet|The play's the thing wherein I will catch the conscience of the king.","Fate|The players agree to stage The Murder of Gonzago."],"Ask for a comedy",["Hamlet|Something light, to hide my mind.","Fate|But the players know a murder tale, and you cannot resist it."])],
+3:[qq("Do you trust Ophelia?","Trust her",["Hamlet|Perhaps she is the one honest soul in this castle.","Fate|Trust cannot save her. Her father's death will break her."],"Suspect her",["Hamlet|Are you a decoy for your father and the king?","Fate|Suspicion changes nothing. Her father's death will break her."]),
+qq("Ophelia offers back your letters and gifts. Take them?","Take them back",["Hamlet|I never gave you anything.","Fate|Love cannot mend what the court has broken."],"Refuse them",["Hamlet|Keep them, Ophelia.","Fate|Love cannot mend what the court has broken."])],
+4:[qq("Do you add a speech of your own to the players' script?","Add my lines",["Hamlet|A dozen lines or so, to strike close to home.","Fate|The play now mirrors the murder."],"Keep the script",["Hamlet|The story alone should be enough.","Fate|The play already mirrors the murder."]),
+qq("During the play, where do you watch?","Watch Claudius's face",["Hamlet|Give me your eyes, Horatio. Watch the king.","Fate|Claudius cannot hide his guilt."],"Watch the stage",["Hamlet|Let the players do their work.","Fate|Even so, Claudius cannot hide his guilt."])],
+5:[qq("Claudius kneels alone, unguarded. Kill him now?","Strike now",["Hamlet|He prays... I could end it now. (raises sword)","Hamlet|No. Killed at prayer, he would go to heaven. That is no revenge.","Fate|Your hand is stayed. Claudius lives to see the final act."],"Spare him",["Hamlet|Not now. Not while he prays.","Fate|Mercy or fear, the result is the same: Claudius lives, and the duel awaits."])],
+6:[qq("Tell Gertrude the truth about Claudius?","Tell her",["Hamlet|Mother, he murdered my father and you share his bed!","Fate|She hears you, but she will still drink from the poisoned cup."],"Stay silent",["Hamlet|I will say no more tonight.","Fate|Silence or truth, she will still drink from the poisoned cup."]),
+qq("Polonius lies dead behind the arras. Hide the body?","Drag it away",["Hamlet|I'll lug the guts into the neighbour room.","Fate|Claudius learns of it at once."],"Leave it",["Hamlet|Let them find him.","Fate|Claudius learns of it at once."]),
+qq("Claudius sends you to England. Go quietly?","Go quietly",["Hamlet|For England, then.","Fate|You sail with Rosencrantz and Guildenstern."],"Resist",["Hamlet|I see a cherub that sees them. Come, for England.","Fate|Resistance is useless. You sail with Rosencrantz and Guildenstern."]),
+qq("On the ship you find a sealed order for your death. What do you do?","Swap the order",["Hamlet|Let Rosencrantz and Guildenstern meet their own fate.","Fate|Pirates attack the ship and you return to Denmark."],"Burn it",["Hamlet|No more of this treachery.","Fate|Pirates attack the ship and you return to Denmark."])],
+7:[qq("Laertes storms in with a mob, demanding vengeance. Face him?","Face him unarmed",["Hamlet|I am not afraid to face him.","Fate|Claudius calms Laertes with a plan."],"Stay hidden",["Hamlet|Not yet.","Fate|Claudius calms Laertes with a plan."]),
+qq("Ophelia is in the river. Do you rush to save her?","Rush to save her",["Hamlet|Ophelia! Hold on!","Fate|You are too late. The river has taken her."],"Mourn from the bank",["Hamlet|I loved her more than forty thousand brothers could.","Fate|Either way, the river has taken her."])],
+8:[qq("Ophelia's funeral passes. Do you reveal yourself to Laertes?","Reveal myself",["Hamlet|This is I, Hamlet the Dane!","Fate|Laertes seizes you. Claudius separates you with talk of a duel."],"Watch from the shadows",["Hamlet|Let me stay hidden a moment.","Fate|Laertes learns you were near. Claudius proposes a duel."]),
+qq("Horatio senses a bad omen before the duel. Heed him?","Heed the omen",["Hamlet|There is a special providence in the fall of a sparrow.","Fate|You go to the hall anyway. The readiness is all."],"Fight anyway",["Hamlet|If it be now, it is not to come.","Fate|You go to the hall. The readiness is all."]),
+qq("Laertes challenges you to a duel. Accept?","Accept",["Hamlet|I will fight him, Horatio.","Fate|The foils are chosen. One is poisoned."],"Refuse",["Hamlet|I want no more blood.","Claudius|Honour demands it, my lord. Come to the hall.","Fate|Refusal is not an option. The foils are chosen."])],
+9:[{q:"Claudius stands before you, and the poisoned cup is on the table. What do you do?",o:[["Make him drink",["Hamlet|Drink off this potion!","Fate|Claudius dies by his own poison, as the play wrote it.",END]],["Run him through",["Hamlet|Then venom, to thy work!","Fate|The poisoned blade finds Claudius. He dies, as the play wrote it.",END]],["Spare him",["Hamlet|Mercy... no. There is none left in this hall.","Fate|You cannot spare him. Hamlet kills Claudius, as the play wrote it.",END]]]}]
+};
+function ask(q){const b=$("dl");b.style.display="block";b.innerHTML="<b style='color:var(--ac)'>A choice:</b> "+q.q+"<br>";q.o.forEach(o=>{const x=document.createElement("button");x.textContent=o[0];x.style.marginRight="8px";x.onclick=()=>{ch[(s-1)+"_"+qd[s-1]]=o[0];dq=o[1];di=0;showDl()};b.appendChild(x)})}
+function endTxt(){const k=Object.keys(ch);return (k.length?"You made "+k.length+" choices. ":"")+"But whatever you chose, the ending was always the same, just as in the play: Hamlet kills Claudius, Gertrude, Laertes and Hamlet die too, and Fortinbras takes the throne. The rest is silence."}
+let rst="Connecting",qd={},ch={},ls=-1,s=0,re=0,name="",me=null,hp=10,ry=Math.PI,keys={},room=null,peers=[],last="",dq=null,di=0,atkT=0,hitC=0,clk=0,paused=true,emptyNpc=null;
+const sc=new T.Scene(),cam=new T.PerspectiveCamera(65,1,.1,260),rd=new T.WebGLRenderer({antialias:true});
+rd.setPixelRatio(Math.min(devicePixelRatio,2));document.body.prepend(rd.domElement);
+function rs(){rd.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}addEventListener("resize",rs);rs();
+sc.add(new T.HemisphereLight(0xbcc8ff,0x332a22,.9));const dl=new T.DirectionalLight(0xfff0d0,.8);dl.position.set(30,60,20);sc.add(dl);
+const mat=c=>new T.MeshLambertMaterial({color:c});
+function bx(w,h,d,c,x,y,z,p){const m=new T.Mesh(new T.BoxGeometry(w,h,d),mat(c));m.position.set(x,y,z);(p||sc).add(m);return m}
+const gr=bx(260,1,260,0x4a4a55,0,-.5,0);const gd=new T.GridHelper(260,52,0x666677,0x555566);gd.position.y=.02;sc.add(gd);
+const COL=[];function bld(x,z,w,d,h,c,rc){bx(w,h,d,c,x,h/2,z);bx(w+1,1,d+1,rc,x,h+.5,z);COL.push([x,z,w/2+.5,d/2+.5])}
+[[-76,0,3,160],[76,0,3,160],[0,-76,160,3],[0,76,160,3]].forEach(a=>bx(a[2],9,a[3],0x5b5b6b,a[0],4.5,a[1]));
+bld(0,-60,22,6,10,0x666677,0x4a4a58);[-11,11].forEach(a=>bx(5,16,5,0x666677,a,8,-60));
+bld(-44,-24,14,10,8,0x6b5a4a,0x4a2a2a);bld(-42,34,12,16,9,0x777788,0x333344);bx(.8,5,.8,0xd4af37,-42,13,34);bx(3,.8,.8,0xd4af37,-42,14,34);
+bld(44,50,16,12,8,0x7a4a5a,0x3a2030);bx(5,7,.4,0xa31f2f,44,3.5,43.5);
+bx(18,1.4,9,0x6b4a2a,0,.7,14);bx(5,6,.3,0x8b1e2d,-6,3.5,10);bx(5,6,.3,0x8b1e2d,6,3.5,10);
+const rv=bx(30,.2,12,0x2a6fb0,-50,.05,-50);rv.material.transparent=true;rv.material.opacity=.8;
+for(let i=0;i<8;i++){bx(.9,1.6,.3,0x999aa5,-6+i*2.6+(i%2),.8,56+(i%3)*2.5)}
+for(let i=0;i<14;i++)bx(.5,.5,.5,[0xff8fb1,0xffffff,0xf1c40f][i%3],38+(i%5)*2,.3,2+Math.floor(i/5)*3);
+const rg=new T.Mesh(new T.CylinderGeometry(9,9,.15,32),mat(0x5a2a2a));rg.position.set(0,.1,-18);sc.add(rg);
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+for(let i=0;i<46;i++){const x=(rnd()-.5)*140,z=(rnd()-.5)*140;if(M.some(m=>Math.hypot(x-m[2],z-m[3])<20)||Math.hypot(x,z-30)<8)continue;bx(.8,3,.8,0x5a3a22,x,1.5,z);const c=new T.Mesh(new T.ConeGeometry(2.6,6,7),mat(0x1f4a2f));c.position.set(x,5.5,z);sc.add(c);COL.push([x,z,1.4,1.4])}
+function mk(body,o){o=o||{};const g=new T.Group(),lp=new T.Group(),lq=new T.Group(),rp=new T.Group(),lap=new T.Group();
+ lp.position.set(-.22,.9,0);lq.position.set(.22,.9,0);g.add(lp,lq);bx(.35,.9,.4,0x222233,0,-.45,0,lp);bx(.35,.9,.4,0x222233,0,-.45,0,lq);
+ bx(.9,1,.5,body,0,1.4,0,g);bx(.55,.55,.55,o.skin||0xf2c9a0,0,2.15,0,g);bx(.6,.2,.6,o.hair||0x111111,0,2.45,0,g);
+ rp.position.set(.6,1.85,0);lap.position.set(-.6,1.85,0);g.add(rp,lap);bx(.25,.9,.25,body,0,-.45,0,rp);bx(.25,.9,.25,body,0,-.45,0,lap);
+ if(o.sword)bx(.08,.12,1.4,0xdddddd,0,-.9,.8,rp);if(o.cape)bx(.9,1.5,.1,o.cape,0,1.3,-.33,g);if(o.crown)bx(.5,.2,.5,0xf1c40f,0,2.7,0,g);
+ if(o.skirt){const k=new T.Mesh(new T.CylinderGeometry(.45,.85,1.1,8),mat(body));k.position.y=.7;g.add(k)}
+ if(o.ghost){g.traverse(m=>{if(m.material){m.material=m.material.clone();m.material.transparent=true;m.material.opacity=.55}})}
+ g.userData={lp,lq,rp,lap};return g}
+function lab(t,c){const cv=document.createElement("canvas");cv.width=256;cv.height=64;const x=cv.getContext("2d");x.font="bold 34px sans-serif";x.textAlign="center";x.fillStyle=c||"#fff";x.strokeStyle="#000";x.lineWidth=5;x.strokeText(t,128,44);x.fillText(t,128,44);const sp=new T.Sprite(new T.SpriteMaterial({map:new T.CanvasTexture(cv),depthTest:false}));sp.scale.set(4,1,1);sp.position.y=3.5;return sp}
+function anim(g,mv,tt,at){const u=g.userData,w=mv?Math.sin(tt*9)*.7:0;u.lp.rotation.x=w;u.lq.rotation.x=-w;u.lap.rotation.x=-w*.6;u.rp.rotation.x=at>0?-1.7+(.35-at)*5:w*.6}
+function hamlet(n,col){const g=mk(0x15151f,{sword:1,cape:col||0x111111});g.add(lab(n,col?"#ffd54a":"#fff"));sc.add(g);return g}
+const npcs=M.map((m,i)=>{const d=NPC[i],g=mk(d[0],{skirt:d[1]==="Ophelia",crown:d[1]==="Claudius",ghost:d[1]==="Ghost",hair:d[1]==="Polonius"?0xbbbbbb:0x222222});g.position.set(m[2]+3,0,m[3]+2);g.rotation.y=Math.PI;g.add(lab(d[1],"#bfe"));g.visible=false;sc.add(g);return g});
+const mk0=new T.Mesh(new T.CylinderGeometry(2.2,2.2,60,20,1,true),new T.MeshBasicMaterial({color:0xffd54a,transparent:true,opacity:.28,side:2,depthWrite:false}));mk0.position.y=30;sc.add(mk0);
+const EN=[];function guard(x,z,boss,nm,col,hpv){const g=mk(col||0x8b1e2d,{sword:1,crown:nm==="Claudius",hair:0x222222});if(nm)g.add(lab(nm,"#f66"));g.position.set(x,0,z);sc.add(g);const e={g,hp:hpv||2,mh:hpv||2,boss:!!boss,cd:0,dead:0,hx:x,hz:z,at:0};EN.push(e);return e}
+for(let i=0;i<9;i++){let x,z;do{x=(rnd()-.5)*130;z=(rnd()-.5)*130}while(Math.hypot(x,z-30)<25);guard(x,z)}
+let duel=false,boss=[];
+me=hamlet("You");me.position.set(0,0,30);me.rotation.y=ry;
+const od={};function sync(l){peers=l||[];peers.forEach(p=>{const q=p.presence;if(p.sameTab||!q||typeof q.s!=="number")return;const pr=q.rs||0;if(pr>re||(pr===re&&q.s>s&&q.s<=10)){if(pr>re){qd={};ch={}}re=pr;s=q.s;tele();story()}})}
+(async()=>{try{room=await claude.use("room");if(room){room.onPeers(c=>sync(c.peers),e=>{rst="Room error: "+e.code});sync(room.peers());rst="Room on"}else rst="Multiplayer unavailable here"}catch(e){room=null;rst="Multiplayer error"}})();
+function tele(){const p=s>0?M[Math.min(s,10)-1]:[0,0,0,30];me.position.set(p[2]+(s>0?-4:0),0,p[3]+(s>0?6:0));hp=10}
+function push(f){const v=[Math.round(me.position.x*5),Math.round(me.position.z*5),Math.round(ry*10),s,re,name,atkT>0?1:0].join();if(room&&(f||v!==last)){last=v;try{room.presence({x:me.position.x,z:me.position.z,r:ry,s:s,rs:re,n:name,a:atkT>0?1:0})}catch(e){}}}
+function story(){if(s>0&&s<=10){dq=DL[s-1];di=0;paused=true;showDl()}else{dq=null;$("dl").style.display="none";paused=false}hud()}
+function showDl(){const b=$("dl");if(dq&&di>=dq.length){const qs=Q[s-1],k=qd[s-1]||0;if(qs&&k<qs.length){qd[s-1]=k+1;ask(qs[k]);return}}if(!dq||di>=dq.length){b.style.display="none";paused=false;hud();return}const l=dq[di].split("|");b.style.display="block";b.innerHTML="<b style='color:var(--ac)'>"+l[0]+":</b> "+l[1]+"<br><button id=nx>"+(di<dq.length-1?"Next ▶":(s>=10?"The end ▶":"Continue ▶"))+"</button>";$("nx").onclick=()=>{di++;showDl()}}
+function hud(){const o=$("obj");if(s>=10){o.innerHTML="<b>The End</b><br>"+endTxt()+" <button id=rp style='pointer-events:auto;margin-top:6px;border:0;border-radius:8px;padding:6px 12px;background:var(--ac);font-weight:700'>🔄 Play again</button>";$("rp").onclick=()=>{re=Date.now();s=0;qd={};ch={};tele();hud();push(true)};return}
+ const m=M[s];o.innerHTML="<b>Mission "+(s+1)+"/10: "+m[0]+"</b><br>"+m[1]+" <span id=ar>➤</span> <span id=ds></span>"}
+function done(){s++;story();push(true)}
+function atk(){if(paused||atkT>0)return;atkT=.35;const f=[Math.sin(ry),Math.cos(ry)];
+ EN.forEach(e=>{if(e.dead>clk)return;const dx=e.g.position.x-me.position.x,dz=e.g.position.z-me.position.z,d=Math.hypot(dx,dz);if(d<4&&(dx*f[0]+dz*f[1])/d>.3){e.hp--;e.g.position.x+=f[0]*1.2;e.g.position.z+=f[1]*1.2;if(e.hp<=0){e.dead=clk+(e.boss?9999:12);e.g.visible=false}}});
+ if(M[s]&&M[s][4]==="kill"){const n=npcs[s];if(n.visible&&Math.hypot(n.position.x-me.position.x,n.position.z-me.position.z)<4.5){n.visible=false;done()}}
+ push(true)}
+$("atk").addEventListener("pointerdown",e=>{atk();e.preventDefault()});
+addEventListener("keydown",e=>{if(e.key.startsWith("Arrow")){keys[e.key]=1;e.preventDefault()}if(e.code==="Space"&&document.activeElement!==$("nm")){atk();e.preventDefault()}});
+addEventListener("keyup",e=>{delete keys[e.key]});
+document.querySelectorAll("#dp button").forEach(b=>{const k=b.dataset.k;b.addEventListener("pointerdown",e=>{keys[k]=1;e.preventDefault()});["pointerup","pointerleave","pointercancel"].forEach(v=>b.addEventListener(v,()=>delete keys[k]))});
+$("go").onclick=()=>{if(window.__joinRoom){try{window.__joinRoom($("rc").value.trim()||"hamlet")}catch(e){}}name=$("nm").value.trim()||"Hamlet";me.remove(me.children[me.children.length-1]);me.add(lab(name,"#ffd54a"));$("ov").remove();paused=false;hud();push(true)};
+const lt=performance.now();let prev=performance.now();
+function loop(now){requestAnimationFrame(loop);const dt=Math.min((now-prev)/1000,.05);prev=now;clk+=dt;
+ let mv=false;if(!paused){if(keys.ArrowLeft)ry+=2.3*dt;if(keys.ArrowRight)ry-=2.3*dt;const sp=keys.ArrowUp?9:keys.ArrowDown?-4.5:0;mv=!!sp;
+  me.position.x+=Math.sin(ry)*sp*dt;me.position.z+=Math.cos(ry)*sp*dt;
+  COL.forEach(c=>{const dx=me.position.x-c[0],dz=me.position.z-c[1],ox=c[2]-Math.abs(dx),oz=c[3]-Math.abs(dz);if(ox>0&&oz>0){if(ox<oz)me.position.x+=(dx<0?-1:1)*ox;else me.position.z+=(dz<0?-1:1)*oz}});
+  me.position.x=Math.max(-72,Math.min(72,me.position.x));me.position.z=Math.max(-72,Math.min(72,me.position.z))}
+ if(atkT>0)atkT-=dt;me.rotation.y=ry;anim(me,mv,clk,atkT);
+ if(s<10){const m=M[s],px=m[2],pz=m[3],d=Math.hypot(me.position.x-px,me.position.z-pz);mk0.position.x=px;mk0.position.z=pz;mk0.visible=m[4]!=="kill";
+  npcs[s].visible=m[4]!=="boss"&&(m[4]!=="kill"||npcs[s].visible||true);
+  if(!paused&&d<2.8&&m[4]==="go")done();
+  if(m[4]==="boss"&&!duel&&d<14&&!paused){duel=true;boss=[guard(px-6,pz-8,1,"Laertes",0x8d99a6,6),guard(px+6,pz-8,1,"Claudius",0xa3202f,5)];boss.forEach(b=>{b.g.visible=true})}
+  if(duel&&boss.every(b=>b.dead>clk)){duel=false;done()}
+  const ds=$("ds");if(ds){ds.textContent=Math.round(d)+" m";const a=Math.atan2(px-me.position.x,pz-me.position.z)-ry;$("ar").style.transform="rotate("+(-a)+"rad)"}}
+ EN.forEach(e=>{const g=e.g;if(e.dead>clk&&e.dead<9000){g.visible=false;return}if(e.dead&&e.dead<9000&&e.dead<=clk){e.dead=0;e.hp=e.mh;g.visible=true;g.position.set(e.hx,0,e.hz)}if(e.dead)return;
+  const dx=me.position.x-g.position.x,dz=me.position.z-g.position.z,d=Math.hypot(dx,dz),rg=e.boss?60:16;let w=false;
+  if(!paused&&d<rg&&d>2.1){const v=(e.boss?5.5:4)*dt;g.position.x+=dx/d*v;g.position.z+=dz/d*v;w=true}
+  if(d<rg)g.rotation.y=Math.atan2(dx,dz);e.cd-=dt;e.at-=dt;
+  if(!paused&&d<=2.4&&e.cd<=0){e.cd=e.boss?.9:1.3;e.at=.35;hp-=e.boss?2:1;if(hp<=0){hp=10;tele()}}
+  anim(g,w,clk,e.at)});
+ const f=[Math.sin(ry),Math.cos(ry)];cam.position.lerp(new T.Vector3(me.position.x-f[0]*9,5.5,me.position.z-f[1]*9),.2);cam.lookAt(me.position.x+f[0]*3,1.6,me.position.z+f[1]*3);
+ if(ls!==s){ls=s;sc.background=new T.Color(SKY[s]);sc.fog=new T.Fog(SKY[s],40,150)}
+ const seen={};peers.forEach(p=>{const q=p.presence;if(p.sameTab||!q||typeof q.x!=="number")return;const k=q.n||"?";seen[k]=1;let o=od[k];if(!o){o=od[k]=hamlet(k,0x6a1b9a);o.position.set(q.x,0,q.z)}
+  o.position.x+=(q.x-o.position.x)*.3;o.position.z+=(q.z-o.position.z)*.3;o.rotation.y=q.r;anim(o,Math.hypot(q.x-o.position.x,q.z-o.position.z)>.25,clk,q.a?.3:0)});
+ Object.keys(od).forEach(k=>{if(!seen[k]){sc.remove(od[k]);delete od[k]}});
+ $("hp").textContent="❤️ ".repeat(Math.max(0,Math.ceil(hp/2)))+" ("+Math.max(hp,0)+")";$("pl").textContent="Players: "+(1+Object.keys(seen).length)+" | "+(room?(room.connected()?"LIVE":"OFFLINE"):"no room")+" | "+rst+" | peers "+peers.length;
+ rd.render(sc,cam)}
+hud();requestAnimationFrame(loop);setInterval(()=>push(false),100);
+</script>
+</body>
+</html>
